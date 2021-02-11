@@ -1,11 +1,45 @@
 [package]
-name = "cb00"
-version = "0.1.0"
 authors = ["simdimdim <simdimdim@gmail.com>"]
-edition = "2018"
-resolver="2"
 default-run = "main"
-
+edition = "2018"
+name = "cb00"
+resolver = "2"
+version = "0.1.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+gfx = "0.18.2"
+gfx_device_gl = "0.16.2"
+sdl2 = "0.34.3"
+shader_version = "0.7.0"
+
+# conrod_core = "0.71.0"
+# conrod_piston = "0.71.0"
+piston2d-deform_grid = "0.9.0"
+piston2d-gfx_graphics = "0.72.0"
+piston2d-graphics = "0.39.0"
+piston_window = { version = "0.118.0", default-features = false }
+pistoncore-window = "0.47.0"
+
+indexmap = { version = "1.6.2", features = ["rayon"] }
+itertools = "0.10.0"
+select = "0.6.0-alpha.1"
+
+reqwest = { version = "0.11.2", features = ["cookies", "stream"] }
+tokio = { version = "1.4.0", features = ["net", "fs", "macros", "rt-multi-thread"] }
+
+average = "0.12.0"
+num-bigint = "0.4.0"
+rand = "0.8.3"
+# rayon = "1.5.0"
+# serde = {version = "1.0.125", features = ["derive"]}
+# serde_json = "1.0.64"
+# serde_with = {version = "1.8.0", features = ["json"]}
+
+array-macro = "2.1.0"
+config = "0.11.0"
+find_folder = "0.3.0"
+levenshtein = "1.0.5"
+
+[dependencies.pistoncore-sdl2_window]
+git = "https://github.com/PistonDevelopers/sdl2_window"
