@@ -6,9 +6,8 @@ use Element::*;
 
 #[derive(Clone, Debug)]
 pub enum Element {
-    Default,
+    Empty,
     File(PathBuf, Option<Picture>),
-    Folder(PathBuf),
 }
 #[derive(Clone, Debug)]
 pub struct Picture {
@@ -21,9 +20,7 @@ pub struct Picture {
 impl Element {
     pub fn new(pb: &PathBuf) -> Self {
         // let name = pb.file_name().unwrap().to_str().unwrap().into();
-        if pb.is_dir() {
-            Self::Folder(pb.into())
-        } else if pb.is_file() {
+        if pb.is_file() {
             if "jpg" == pb.extension().unwrap_or(OsStr::new("")) {
                 Self::File(
                     pb.into(),
@@ -38,7 +35,7 @@ impl Element {
                 Self::File(pb.into(), None)
             }
         } else {
-            Element::Default
+            Element::Empty
         }
     }
 
@@ -47,7 +44,7 @@ impl Element {
         ctx: &mut G2dTextureContext,
     ) {
         match self {
-            Default => {}
+            Empty => {}
             File(name, pic) => {
                 if let Some(Picture { w, h, tex, .. }) = pic {
                     let texture = Texture::from_path(
@@ -62,7 +59,6 @@ impl Element {
                     }
                 }
             }
-            Folder(..) => {}
         }
     }
 }
@@ -85,17 +81,18 @@ impl Display for Element {
             write!(f, "Name: {},\nSize: {},\nw: {}, h: {}", name, s2, w, h)
         };
         match self {
-            Default => Ok(()),
+            Empty => Ok(()),
             File(pb, pic) => {
                 let name = pb.file_name().unwrap().to_str().unwrap().into();
                 if let Some(Picture { w, h, size, .. }) = pic {
                     helper(name, size, w, h)
                 } else {
-                    write!(f, "Name: {}", name)
+                    write!(
+                        f,
+                        "Name: {}",
+                        pb.file_name().unwrap().to_str().unwrap()
+                    )
                 }
-            }
-            Folder(pb) => {
-                write!(f, "Name: {}", pb.file_name().unwrap().to_str().unwrap())
             }
         }
     }

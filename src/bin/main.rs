@@ -3,8 +3,8 @@
 
 use cb00::{
     app::App,
+    common::Draw,
     element::{Element, Picture},
-    Assets,
 };
 use gfx_device_gl::{CommandBuffer, Resources};
 use gfx_graphics::GfxGraphics;
@@ -31,38 +31,37 @@ use std::cmp::max;
 #[tokio::main]
 async fn main() {
     let mut app = App::default();
-    app.test().await;
-    return;
+    // app.test().await;
     let mut window: PistonWindow<Sdl2Window> =
         app.settings.window.build().unwrap();
     window.set_capture_cursor(app.settings.capture);
     window.set_max_fps(app.settings.fps);
     window.set_ups(app.settings.ups);
     let mut cursor = [0.; 2];
-    let mut assets = Assets::default();
 
     while let Some(e) = window.next() {
         let mut ctx = window.create_texture_context();
         window.draw_2d(&e, |c, g, _device| {
             clear([0.0; 4], g);
-            let mut offsetx = 0u32;
-            let mut offsety = (0u32, 0u32);
-            let mut sorted: Vec<_> = assets.elements.iter_mut().collect();
-            sorted.sort_by(|(a, _), (b, _)| {
-                a.file_name().partial_cmp(&b.file_name()).unwrap()
-            });
-            for (_, el) in sorted {
-                // draw(
-                //     el,
-                //     &mut ctx,
-                //     c,
-                //     g,
-                //     &mut offsetx,
-                //     &mut offsety,
-                //     &app.width,
-                //     &app.height,
-                // );
-            }
+            app.draw(&mut ctx, c, g);
+            // let mut offsetx = 0u32;
+            // let mut offsety = (0u32, 0u32);
+            // let mut sorted: Vec<_> = assets.elements.iter_mut().collect();
+            // sorted.sort_by(|(a, _), (b, _)| {
+            //     a.file_name().partial_cmp(&b.file_name()).unwrap()
+            // });
+            // for (_, el) in sorted {
+            //     // draw(
+            //     //     el,
+            //     //     &mut ctx,
+            //     //     c,
+            //     //     g,
+            //     //     &mut offsetx,
+            //     //     &mut offsety,
+            //     //     &app.width,
+            //     //     &app.height,
+            //     // );
+            // }
         });
         if let Some(_) = e.resize_args() {
             app.resize(&window);
@@ -95,7 +94,6 @@ async fn main() {
         if let Some(_args) = e.update_args() {
             // println!("{}", args.dt);
             // app.update();
-            assets.list_files();
         }
     }
     #[allow(path_statements)]
@@ -104,7 +102,7 @@ async fn main() {
         app.ar;
     }
 }
-fn draw(
+fn _draw(
     el: &mut Element,
     ctx: &mut G2dTextureContext,
     c: Context,

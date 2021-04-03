@@ -1,14 +1,18 @@
+use crate::common::{Draw, Prepare};
 use average::WeightedMean;
 use gfx_device_gl::{CommandBuffer, Resources};
-use gfx_graphics::GfxGraphics;
+use gfx_graphics::{Flip, GfxGraphics, TextureSettings};
 use graphics::Context;
+use home;
 use indexmap::IndexMap;
 use levenshtein::levenshtein as lev;
 use piston_window::{
+    texture,
     G2dTextureContext,
     OpenGL,
     PistonWindow,
     Size,
+    Texture,
     Window,
     WindowSettings,
 };
@@ -22,6 +26,16 @@ use std::{
     io::Write,
     path::PathBuf,
 };
+use url::Origin;
+
+const EXTENSIONS: [&str; 4] = ["jpg", "jpeg", "bmp", "png"];
+fn contains(s: &str) -> bool {
+    let test = EXTENSIONS.iter().position(|&r| r == s).unwrap_or(999);
+    match test {
+        0..4 => true,
+        _ => false,
+    }
+}
 
 impl Default for Settings {
     fn default() -> Self {
@@ -54,15 +68,17 @@ impl Default for Settings {
         }
     }
 }
-impl Default for App<'_> {
+impl Default for App {
     fn default() -> Self {
         let mut headers = header::HeaderMap::new();
         headers
             .insert(header::REFERER, "https://manganelo.com/".parse().unwrap());
+        let mut pm = HashMap::new();
+        pm.insert(0, vec![Folder::default()]);
         Self {
-            title:    "Reader",
+            title:    "Reader".to_string(),
             pane:     0,
-            panemap:  HashMap::new(),
+            panemap:  pm,
             settings: Settings::default(),
             width:    0.,
             height:   0.,
@@ -78,16 +94,13 @@ impl Default for App<'_> {
 impl Default for Folder {
     fn default() -> Self {
         Self {
-            location: Url::parse(
-                fs::canonicalize(&PathBuf::from("~"))
-                    .ok()
-                    .unwrap()
-                    .to_str()
-                    .unwrap(),
+            url:     Url::from_directory_path(
+                home::home_dir().unwrap().to_str().unwrap(),
             )
             .ok()
             .unwrap(),
-            items:    IndexMap::new(),
+            items:   IndexMap::new(),
+            changed: true,
         }
     }
 }
@@ -106,8 +119,8 @@ pub struct Settings {
     pub window:      WindowSettings,
 }
 #[derive(Clone)]
-pub struct App<'a> {
-    pub title:    &'a str,
+pub struct App {
+    pub title:    String,
     pane:         u16,
     panemap:      HashMap<u16, Vec<Folder>>,
     pub settings: Settings,
@@ -118,13 +131,14 @@ pub struct App<'a> {
 }
 #[derive(Clone, Debug)]
 pub struct Folder {
-    location: Url,
-    items:    IndexMap<u32, Url>,
+    url:     Url,
+    items:   IndexMap<Url, (PathBuf, Option<Texture<Resources>>)>,
+    changed: bool,
 }
-impl App<'_> {
+impl App {
     pub fn new() -> Self {
         Self {
-            title:    "",
+            title:    "".to_string(),
             pane:     0,
             panemap:  HashMap::new(),
             settings: Settings::default(),
@@ -186,7 +200,7 @@ impl App<'_> {
             let tmp = Url::parse(url).clone().ok().unwrap();
             let name =
                 tmp.path_segments().map(|c| c.collect::<Vec<_>>()).unwrap();
-            let path = format!("{}{}", "/tmp/manganelo/", name[name.len() - 1]);
+            let path = format!("{}{}", "/tmp/readerapp/", name[name.len() - 1]);
             fs::create_dir_all(&path).ok().unwrap();
             if let Ok(mut dest) = File::create(path) {
                 dest.write(&pics[n]).ok().unwrap();
@@ -204,42 +218,161 @@ impl App<'_> {
         } = window.window.draw_size();
         self.ar = self.width / self.height;
     }
-
-    pub fn display(
-        &self,
-        _ctx: &mut G2dTextureContext,
-        _c: Context,
-        _g: &mut GfxGraphics<Resources, CommandBuffer>,
-    ) {
-        match self.pane {
-            _ => {}
-        }
-    }
 }
+
 impl Folder {
     pub fn new(path: &str) -> Self {
-        if let Ok(url) = Url::parse(&path) {
-            Self {
-                location: url,
-                items:    IndexMap::new(),
-            }
-        } else {
-            Self::default()
+        match Url::parse(path) {
+            Ok(url) => Self {
+                url,
+                items: IndexMap::new(),
+                changed: true,
+            },
+            Err(_) => Self::default(),
         }
     }
 
     pub fn add(&mut self) {
-        match self.location.scheme() {
-            "file" => {}
-            "http" | "https" => {
-                // let texture = Texture::from_path(
-                //         ctx,
-                //         PathBuf::from(name.clone()).as_path(),
-                //         Flip::None,
-                //         &TextureSettings::new().filter(texture::Filter::
-                // Nearest);
+        match self.scheme() {
+            "file" => {
+                let path = PathBuf::from(self.path());
+                let dir = match path.is_dir() {
+                    true => path.read_dir(),
+                    false => path.parent().unwrap().read_dir(),
+                };
+                for entry in dir.ok().unwrap().filter_map(|a| a.ok()) {
+                    entry
+                        .path()
+                        .is_file()
+                        .then_some(contains(
+                            entry
+                                .path()
+                                .extension()
+                                .unwrap_or_default()
+                                .to_str()
+                                .unwrap_or(""),
+                        ))
+                        .unwrap_or_default()
+                        .then(|| self.add_from_path(entry.path()));
+                }
+                // dir.ok()
+                //     .unwrap()
+                //     .into_iter()
+                //     .filter_map(|f| f.ok())
+                //     .filter(|entry| {
+                //         entry.path().is_file() &&
+                //             EXTENSIONS.contains(
+                //                 &entry
+                //                     .path()
+                //                     .extension()
+                //                     .unwrap()
+                //                     .to_str()
+                //                     .unwrap(),
+                //             )
+                //     })
+                //     .for_each(|entry| {
+                //         self.items.insert(
+                //
+                // Url::from_directory_path(entry.path()).ok().unwrap(),
+                //             (entry.path(), None),
+                //         );
+                //     });
+                // for entry in dir.ok().unwrap().filter_map(|a| a.ok()) {
+                //     if entry.path().is_file() &&
+                //         vec!["jpg"].contains(
+                //
+                // &entry.path().extension().unwrap().to_str().unwrap(),
+                //         )
+                //     {
+                //         self.items.insert(
+                //
+                // Url::from_directory_path(entry.path()).ok().unwrap(),
+                //             (entry.path(), None),
+                //         );
+                //     }
+                // }
             }
+            "http" | "https" => {}
             _ => {}
         }
+        self.changed = true;
+    }
+
+    pub fn add_from_path(
+        &mut self,
+        pb: PathBuf,
+    ) -> Option<(PathBuf, Option<Texture<Resources>>)> {
+        self.changed = true;
+        self.items
+            .insert(Url::from_directory_path(&pb).ok().unwrap(), (pb, None))
+    }
+
+    #[allow(unused_variables, unreachable_code)]
+    pub fn add_from_url(
+        &mut self,
+        url: Url,
+    ) -> Option<(PathBuf, Option<Texture<Resources>>)> {
+        self.changed = true;
+        todo!("Needs logic for temp dir allocation and file dl");
+        self.items.insert(url, (PathBuf::from(url.path()), None))
+    }
+
+    fn prepare(
+        &mut self,
+        ctx: &mut G2dTextureContext,
+    ) {
+        if self.changed {
+            self.add();
+            self.load_textures(ctx);
+            self.changed = false;
+        }
+    }
+
+    fn scheme(&self) -> &str { self.url.scheme() }
+
+    fn _origin(&self) -> Origin { self.url.origin() }
+
+    fn path(&self) -> &str { self.url.path() }
+}
+impl Draw for Folder {
+    fn draw(
+        &mut self,
+        ctx: &mut G2dTextureContext,
+        _c: Context,
+        _g: &mut GfxGraphics<Resources, CommandBuffer>,
+    ) {
+        if self.changed {
+            self.prepare(ctx);
+            self.changed = false;
+        }
+    }
+}
+impl Prepare for Folder {
+    fn load_textures(
+        &mut self,
+        ctx: &mut G2dTextureContext,
+    ) {
+        for (_, (pb, tex)) in self.items.iter_mut() {
+            *tex = Some(
+                Texture::from_path(
+                    ctx,
+                    pb,
+                    Flip::None,
+                    &TextureSettings::new().filter(texture::Filter::Nearest),
+                )
+                .ok()
+                .unwrap(),
+            );
+        }
+    }
+}
+impl Draw for App {
+    fn draw(
+        &mut self,
+        ctx: &mut G2dTextureContext,
+        c: Context,
+        g: &mut GfxGraphics<Resources, CommandBuffer>,
+    ) {
+        self.panemap.get_mut(&self.pane).unwrap()[0].draw(ctx, c, g);
     }
 }
