@@ -4,7 +4,6 @@
 
 pub mod app;
 pub mod common;
-pub mod element;
 pub mod ui;
 
 pub use self::app::App;

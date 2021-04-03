@@ -449,3 +449,53 @@ impl From<PathBuf> for PathOrUrl {
 impl From<Url> for PathOrUrl {
     fn from(x: Url) -> Self { Self::Url(x) }
 }
+
+// use gfx_device_gl::{CommandBuffer, Resources};
+// use gfx_graphics::GfxGraphics;
+// use graphics::{clear, Context, Transformed};
+// use std::cmp::max;
+// use piston_window::{
+//     image,
+//     G2dTextureContext,
+// };
+
+// fn _draw(
+//     el: &mut Element,
+//     ctx: &mut G2dTextureContext,
+//     c: Context,
+//     g: &mut GfxGraphics<Resources, CommandBuffer>,
+//     offsetx: &mut u32,
+//     offsety: &mut (u32, u32),
+//     width: &f64,
+//     _height: &f64,
+// ) {
+//     el.t(ctx);
+//     match el {
+//         Element::File(_, Some(Picture { w, h, tex, .. })) => {
+//             const ZOOM: f64 = 0.245;
+//             let transform = c
+//                 .trans(*offsetx as f64, offsety.0 as f64)
+//                 .transform
+//                 .append_transform(graphics::math::scale(ZOOM, ZOOM));
+//             // dbg!(c.transform);
+//             if let Some(texture) = tex {
+//                 image(texture, transform, g);
+//             }
+//             let new_offsetx = (ZOOM * *w as f64) as u32;
+//             if ((*offsetx + new_offsetx) as f64) < *width - new_offsetx as
+// f64 {                 *offsetx += new_offsetx;
+//                 offsety.1 = max(
+//                     (*h as f64 * ZOOM) as u32,
+//                     (offsety.1 as f64 * ZOOM) as u32,
+//                 );
+//             } else {
+//                 // dbg!(&offsety);
+//                 offsety.0 += offsety.1;
+//                 offsety.1 = 0;
+//                 *offsetx = 0;
+//             }
+//         }
+//         _ => {}
+//     }
+//     // println!("{}", el);
+// }
