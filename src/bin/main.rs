@@ -31,7 +31,7 @@ use std::cmp::max;
 #[tokio::main]
 async fn main() {
     let mut app = App::default();
-    // app.test().await;
+    app.test().await;
     let mut window: PistonWindow<Sdl2Window> =
         app.settings.window.build().unwrap();
     window.set_capture_cursor(app.settings.capture);

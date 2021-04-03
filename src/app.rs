@@ -3,6 +3,7 @@ use average::WeightedMean;
 use gfx_device_gl::{CommandBuffer, Resources};
 use gfx_graphics::{Flip, GfxGraphics, TextureSettings};
 use graphics::Context;
+use header::HeaderValue;
 use home;
 use indexmap::IndexMap;
 use levenshtein::levenshtein as lev;
@@ -70,9 +71,6 @@ impl Default for Settings {
 }
 impl Default for App {
     fn default() -> Self {
-        let mut headers = header::HeaderMap::new();
-        headers
-            .insert(header::REFERER, "https://manganelo.com/".parse().unwrap());
         let mut pm = HashMap::new();
         pm.insert(0, vec![Folder::default()]);
         Self {
@@ -83,11 +81,7 @@ impl Default for App {
             width:    0.,
             height:   0.,
             ar:       0.,
-            client:   Client::builder()
-                .default_headers(headers)
-                .build()
-                .ok()
-                .unwrap(),
+            client:   Client::new(),
         }
     }
 }
@@ -150,6 +144,9 @@ impl App {
     }
 
     pub async fn test(&mut self) {
+        let mut headers = header::HeaderMap::new();
+        headers
+            .insert(header::REFERER, "https://manganelo.com/".parse().unwrap());
         let html: String = self
             .client
             .get("https://manganelo.com/chapter/ni924247/chapter_22")
@@ -184,10 +181,15 @@ impl App {
         dist.iter_mut().for_each(|a| *a -= m.mean() as i32);
         let mut zip: Vec<_> = dist.iter().zip(&links).collect();
         zip.retain(|(&a, _)| a < 3 && a >= 0);
+        const PATH: &str = "/tmp/readerapp/";
         for (n, (_, &url)) in zip.into_iter().enumerate() {
             pics.push(
                 self.client
                     .get(url)
+                    .header(
+                        header::REFERER,
+                        "https://manganelo.com/".parse::<HeaderValue>().unwrap(),
+                    )
                     .send()
                     .await
                     .ok()
@@ -197,12 +199,13 @@ impl App {
                     .ok()
                     .unwrap(),
             );
-            let tmp = Url::parse(url).clone().ok().unwrap();
+            let tmp = Url::parse(url).ok().unwrap();
             let name =
                 tmp.path_segments().map(|c| c.collect::<Vec<_>>()).unwrap();
-            let path = format!("{}{}", "/tmp/readerapp/", name[name.len() - 1]);
-            fs::create_dir_all(&path).ok().unwrap();
-            if let Ok(mut dest) = File::create(path) {
+            fs::create_dir_all(PATH).ok().unwrap();
+            if let Ok(mut dest) =
+                File::create(format!("{}{}", PATH, name[name.len() - 1]))
+            {
                 dest.write(&pics[n]).ok().unwrap();
             }
         }
