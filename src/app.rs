@@ -23,6 +23,7 @@ use select::{document::Document, predicate::Name};
 use std::{
     cmp::max,
     collections::HashMap,
+    fmt::Display,
     fs::{self, File},
     io::Write,
     path::PathBuf,
@@ -95,10 +96,22 @@ impl Default for Folder {
             .unwrap(),
             items:   IndexMap::new(),
             changed: true,
+            size:    0,
         }
     }
 }
-
+impl Default for Picture {
+    fn default() -> Self {
+        let pb = PathBuf::from(".");
+        Self {
+            path: pb.clone(),
+            w:    0,
+            h:    0,
+            size: pb.metadata().unwrap().len(),
+            tex:  None,
+        }
+    }
+}
 #[derive(Clone)]
 pub struct Settings {
     pub fullscreen:  bool,
@@ -128,7 +141,17 @@ pub struct Folder {
     url:     Url,
     items:   IndexMap<Url, (PathBuf, Option<Texture<Resources>>)>,
     changed: bool,
+    size:    u64,
 }
+#[derive(Clone, Debug)]
+pub struct Picture {
+    pub path: PathBuf,
+    pub w:    u32,
+    pub h:    u32,
+    pub size: u64,
+    pub tex:  Option<Texture<Resources>>,
+}
+
 impl App {
     pub fn new() -> Self {
         Self {
@@ -230,12 +253,13 @@ impl Folder {
                 url,
                 items: IndexMap::new(),
                 changed: true,
+                size: 0,
             },
             Err(_) => Self::default(),
         }
     }
 
-    pub fn add(&mut self) {
+    pub fn read(&mut self) {
         match self.scheme() {
             "file" => {
                 let path = PathBuf::from(self.path());
@@ -256,7 +280,7 @@ impl Folder {
                                 .unwrap_or(""),
                         ))
                         .unwrap_or_default()
-                        .then(|| self.add_from_path(entry.path()));
+                        .then(|| self.add_from(entry.path()));
                 }
                 // dir.ok()
                 //     .unwrap()
@@ -301,23 +325,21 @@ impl Folder {
         self.changed = true;
     }
 
-    pub fn add_from_path(
-        &mut self,
-        pb: PathBuf,
-    ) -> Option<(PathBuf, Option<Texture<Resources>>)> {
-        self.changed = true;
-        self.items
-            .insert(Url::from_directory_path(&pb).ok().unwrap(), (pb, None))
-    }
-
     #[allow(unused_variables, unreachable_code)]
-    pub fn add_from_url(
+    fn add_from(
         &mut self,
-        url: Url,
+        link: impl Into<PathOrUrl>,
     ) -> Option<(PathBuf, Option<Texture<Resources>>)> {
         self.changed = true;
-        todo!("Needs logic for temp dir allocation and file dl");
-        self.items.insert(url, (PathBuf::from(url.path()), None))
+        match link.into() {
+            PathOrUrl::Path(pb) => self
+                .items
+                .insert(Url::from_directory_path(&pb).ok().unwrap(), (pb, None)),
+            PathOrUrl::Url(url) => {
+                todo!("Needs logic for temp dir allocation and file dl");
+                self.items.insert(url, (PathBuf::from(url.path()), None))
+            }
+        }
     }
 
     fn prepare(
@@ -325,7 +347,11 @@ impl Folder {
         ctx: &mut G2dTextureContext,
     ) {
         if self.changed {
-            self.add();
+            self.read();
+            self.size = self
+                .items
+                .values()
+                .fold(0, |acc, (pb, _)| acc + pb.metadata().unwrap().len());
             self.load_textures(ctx);
             self.changed = false;
         }
@@ -333,9 +359,38 @@ impl Folder {
 
     fn scheme(&self) -> &str { self.url.scheme() }
 
-    fn _origin(&self) -> Origin { self.url.origin() }
+    pub fn _origin(&self) -> Origin { self.url.origin() }
 
-    fn path(&self) -> &str { self.url.path() }
+    pub fn path(&self) -> &str { self.url.path() }
+}
+impl Display for Folder {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        let s = (self.size as f64).log(1024.);
+        let s2 = match s as i32 {
+            0..1 => format!("{:.2}", s).to_string(),
+            1..2 => format!("{:.2}K", s).to_string(),
+            2..3 => format!("{:.2}M", s).to_string(),
+            3..4 => format!("{:.2}G", s).to_string(),
+            4..5 => format!("{:.2}T", s).to_string(),
+            _ => "".to_string(),
+        };
+        write!(
+            f,
+            "Name: {},\nSize: {}",
+            self.url
+                .to_file_path()
+                .ok()
+                .unwrap()
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            s2,
+        )
+    }
 }
 impl Draw for Folder {
     fn draw(
@@ -366,6 +421,10 @@ impl Prepare for Folder {
                 .ok()
                 .unwrap(),
             );
+            // use gfx_graphics::ImageSize;
+            // if let Some(t) = tex {
+            //     let (w, h) = t.get_size();
+            // }
         }
     }
 }
@@ -378,4 +437,15 @@ impl Draw for App {
     ) {
         self.panemap.get_mut(&self.pane).unwrap()[0].draw(ctx, c, g);
     }
+}
+
+enum PathOrUrl {
+    Path(PathBuf),
+    Url(Url),
+}
+impl From<PathBuf> for PathOrUrl {
+    fn from(x: PathBuf) -> Self { Self::Path(x) }
+}
+impl From<Url> for PathOrUrl {
+    fn from(x: Url) -> Self { Self::Url(x) }
 }
