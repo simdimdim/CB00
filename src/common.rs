@@ -3,17 +3,30 @@ use gfx_graphics::GfxGraphics;
 use graphics::Context;
 use piston_window::G2dTextureContext;
 
-pub trait Draw {
+pub trait Draw<'a> {
+    type Params = Option<()>;
+
     fn draw(
-        &mut self,
-        ctx: &mut G2dTextureContext,
+        &self,
+        // ctx: &mut G2dTextureContext,
         c: Context,
         g: &mut GfxGraphics<Resources, CommandBuffer>,
+        _: Self::Params,
     );
 }
-pub trait Prepare {
-    fn load_textures(
+pub trait Prepare<'a> {
+    type Input = &'a mut G2dTextureContext;
+
+    fn prepare(
         &mut self,
-        ctx: &mut G2dTextureContext,
+        _: Self::Input,
+    );
+}
+pub trait Update {
+    type Input;
+
+    fn update(
+        &mut self,
+        _: Self::Input,
     );
 }

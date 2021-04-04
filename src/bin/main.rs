@@ -1,8 +1,7 @@
-#![feature(destructuring_assignment)]
-#![feature(exclusive_range_pattern)]
-
-use cb00::{app::App, common::Draw};
-
+use cb00::{
+    app::App,
+    common::{Draw, Prepare},
+};
 use graphics::clear;
 use piston_window::{
     AdvancedWindow,
@@ -18,9 +17,10 @@ use piston_window::{
     ResizeEvent,
     UpdateEvent,
 };
+use sdl2::video::FullscreenType;
 use sdl2_window::Sdl2Window;
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
     let mut app = App::default();
     app.test().await;
@@ -33,27 +33,14 @@ async fn main() {
 
     while let Some(e) = window.next() {
         let mut ctx = window.create_texture_context();
+        app.prepare(&mut ctx);
+
         window.draw_2d(&e, |c, g, _device| {
             clear([0.0; 4], g);
-            app.draw(&mut ctx, c, g);
-            // let mut offsetx = 0u32;
-            // let mut offsety = (0u32, 0u32);
-            // let mut sorted: Vec<_> = assets.elements.iter_mut().collect();
+            app.draw(c, g, None);
             // sorted.sort_by(|(a, _), (b, _)| {
             //     a.file_name().partial_cmp(&b.file_name()).unwrap()
             // });
-            // for (_, el) in sorted {
-            //     // draw(
-            //     //     el,
-            //     //     &mut ctx,
-            //     //     c,
-            //     //     g,
-            //     //     &mut offsetx,
-            //     //     &mut offsety,
-            //     //     &app.width,
-            //     //     &app.height,
-            //     // );
-            // }
         });
         if let Some(_) = e.resize_args() {
             app.resize(&window);
@@ -67,12 +54,28 @@ async fn main() {
         if let Some(button) = e.press_args() {
             if let Button::Keyboard(key) = button {
                 match key {
-                    Key::Q => {
-                        break;
+                    Key::A | Key::Left => app.prev_page(),
+                    Key::D | Key::Right => app.next_page(),
+                    Key::W | Key::Up | Key::NumPadPlus => app.more(),
+                    Key::S | Key::Down | Key::NumPadMinus => app.less(),
+                    Key::R => app.toggle_direction(),
+                    Key::Q => break,
+                    Key::F | Key::F12 => {
+                        match window.window.window.fullscreen_state() {
+                            FullscreenType::Off => &window
+                                .window
+                                .window
+                                .set_fullscreen(FullscreenType::Desktop),
+                            FullscreenType::True => &window
+                                .window
+                                .window
+                                .set_fullscreen(FullscreenType::Desktop),
+                            FullscreenType::Desktop => &window
+                                .window
+                                .window
+                                .set_fullscreen(FullscreenType::Off),
+                        };
                     }
-                    Key::F => {}
-                    Key::A => {}
-                    Key::D => {}
                     _ => {}
                 }
             }

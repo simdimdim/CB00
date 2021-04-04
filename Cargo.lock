@@ -117,7 +117,7 @@ checksum = "b700ce4376041dcd0a327fd0097c41095743c4c8af8887265942faf1100bd040"
 
 [[package]]
 name = "cb00"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "array-macro",
  "average",
@@ -2003,7 +2003,6 @@ dependencies = [
  "libc",
  "memchr",
  "mio",
- "num_cpus",
  "pin-project-lite",
  "tokio-macros",
 ]

@@ -1,15 +1,14 @@
 use crate::common::{Draw, Prepare};
 use average::WeightedMean;
 use gfx_device_gl::{CommandBuffer, Resources};
-use gfx_graphics::{Flip, GfxGraphics, TextureSettings};
-use graphics::Context;
+use gfx_graphics::{Flip, GfxGraphics, ImageSize, TextureSettings};
+use graphics::{image, Context, Transformed};
 use header::HeaderValue;
 use home;
-use indexmap::IndexMap;
+use itertools::Itertools;
 use levenshtein::levenshtein as lev;
 use piston_window::{
     texture,
-    G2dTextureContext,
     OpenGL,
     PistonWindow,
     Size,
@@ -17,13 +16,17 @@ use piston_window::{
     Window,
     WindowSettings,
 };
-use reqwest::{header, Client, Url};
+use reqwest::{
+    header::{self, HeaderMap},
+    Client,
+    Url,
+};
 use sdl2_window::Sdl2Window;
 use select::{document::Document, predicate::Name};
 use std::{
     cmp::max,
-    collections::HashMap,
-    fmt::Display,
+    collections::{BTreeMap, HashMap},
+    fmt::{Debug, Display},
     fs::{self, File},
     io::Write,
     path::PathBuf,
@@ -72,16 +75,14 @@ impl Default for Settings {
 }
 impl Default for App {
     fn default() -> Self {
-        let mut pm = HashMap::new();
-        pm.insert(0, vec![Folder::default()]);
         Self {
             title:    "Reader".to_string(),
-            pane:     0,
-            panemap:  pm,
+            current:  0,
+            panes:    HashMap::new(),
             settings: Settings::default(),
-            width:    0.,
-            height:   0.,
-            ar:       0.,
+            width:    1.,
+            height:   1.,
+            ar:       1.,
             client:   Client::new(),
         }
     }
@@ -89,14 +90,18 @@ impl Default for App {
 impl Default for Folder {
     fn default() -> Self {
         Self {
-            url:     Url::from_directory_path(
+            url:       Url::from_directory_path(
                 home::home_dir().unwrap().to_str().unwrap(),
             )
             .ok()
             .unwrap(),
-            items:   IndexMap::new(),
-            changed: true,
-            size:    0,
+            items:     BTreeMap::new(),
+            changed:   true,
+            direction: true,
+            size:      0,
+            maxdim:    (0, 0),
+            batch:     2,
+            index:     0,
         }
     }
 }
@@ -112,6 +117,11 @@ impl Default for Picture {
         }
     }
 }
+
+enum Source {
+    Path(PathBuf),
+    Url(Url),
+}
 #[derive(Clone)]
 pub struct Settings {
     pub fullscreen:  bool,
@@ -124,12 +134,13 @@ pub struct Settings {
     pub samples:     u8,
     pub opengl:      OpenGL,
     pub window:      WindowSettings,
+    //add new fields to Debug impl
 }
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct App {
     pub title:    String,
-    pane:         u16,
-    panemap:      HashMap<u16, Vec<Folder>>,
+    current:      u16,
+    panes:        HashMap<u16, Vec<Folder>>,
     pub settings: Settings,
     pub width:    f64,
     pub height:   f64,
@@ -138,10 +149,14 @@ pub struct App {
 }
 #[derive(Clone, Debug)]
 pub struct Folder {
-    url:     Url,
-    items:   IndexMap<Url, (PathBuf, Option<Texture<Resources>>)>,
-    changed: bool,
-    size:    u64,
+    url:       Url,
+    items:     BTreeMap<Url, Picture>,
+    changed:   bool,
+    direction: bool,
+    size:      u64,
+    maxdim:    (u32, u32),
+    batch:     u8,
+    index:     u32,
 }
 #[derive(Clone, Debug)]
 pub struct Picture {
@@ -155,14 +170,8 @@ pub struct Picture {
 impl App {
     pub fn new() -> Self {
         Self {
-            title:    "".to_string(),
-            pane:     0,
-            panemap:  HashMap::new(),
-            settings: Settings::default(),
-            width:    1.,
-            height:   1.,
-            ar:       1.,
-            client:   Client::new(),
+            title: "main".to_string(),
+            ..App::default()
         }
     }
 
@@ -234,6 +243,54 @@ impl App {
         }
     }
 
+    pub async fn fetch(
+        &mut self,
+        _folder: Folder,
+    ) {
+    }
+
+    pub fn next_page(&mut self) {
+        self.panes
+            .get_mut(&self.current)
+            .unwrap()
+            .first_mut()
+            .unwrap()
+            .next_page();
+    }
+
+    pub fn prev_page(&mut self) {
+        self.panes
+            .get_mut(&self.current)
+            .unwrap()
+            .first_mut()
+            .unwrap()
+            .prev_page();
+    }
+
+    pub fn more(&mut self) {
+        self.panes
+            .get_mut(&self.current)
+            .unwrap()
+            .iter_mut()
+            .for_each(|f| f.more())
+    }
+
+    pub fn less(&mut self) {
+        self.panes
+            .get_mut(&self.current)
+            .unwrap()
+            .iter_mut()
+            .for_each(|f| f.less())
+    }
+
+    pub fn toggle_direction(&mut self) {
+        self.panes
+            .get_mut(&self.current)
+            .unwrap()
+            .iter_mut()
+            .for_each(|f| f.toggle_direction());
+    }
+
     pub fn resize(
         &mut self,
         window: &PistonWindow<Sdl2Window>,
@@ -245,15 +302,12 @@ impl App {
         self.ar = self.width / self.height;
     }
 }
-
 impl Folder {
     pub fn new(path: &str) -> Self {
         match Url::parse(path) {
             Ok(url) => Self {
                 url,
-                items: IndexMap::new(),
-                changed: true,
-                size: 0,
+                ..Self::default()
             },
             Err(_) => Self::default(),
         }
@@ -328,33 +382,54 @@ impl Folder {
     #[allow(unused_variables, unreachable_code)]
     fn add_from(
         &mut self,
-        link: impl Into<PathOrUrl>,
-    ) -> Option<(PathBuf, Option<Texture<Resources>>)> {
+        link: impl Into<Source>,
+    ) -> Option<Picture> {
         self.changed = true;
         match link.into() {
-            PathOrUrl::Path(pb) => self
-                .items
-                .insert(Url::from_directory_path(&pb).ok().unwrap(), (pb, None)),
-            PathOrUrl::Url(url) => {
+            Source::Path(pb) => self.items.insert(
+                Url::from_directory_path(&pb).ok().unwrap(),
+                Picture {
+                    path: pb,
+                    ..Picture::default()
+                },
+            ),
+            Source::Url(url) => {
                 todo!("Needs logic for temp dir allocation and file dl");
-                self.items.insert(url, (PathBuf::from(url.path()), None))
+                self.items.insert(url, Picture {
+                    path: PathBuf::from(url.path()),
+                    ..Picture::default()
+                })
             }
         }
     }
 
-    fn prepare(
+    #[allow(dead_code, unused_variables, unreachable_code)]
+    async fn download(
         &mut self,
-        ctx: &mut G2dTextureContext,
+        client: Client,
+        headers: Option<HeaderMap>,
     ) {
-        if self.changed {
-            self.read();
-            self.size = self
-                .items
-                .values()
-                .fold(0, |acc, (pb, _)| acc + pb.metadata().unwrap().len());
-            self.load_textures(ctx);
-            self.changed = false;
+        let request = client
+            .get(self.url.clone())
+            .send()
+            .await
+            .ok()
+            .unwrap()
+            .text()
+            .await
+            .ok()
+            .unwrap();
+        todo!("Get webpage and find pics");
+        let mut request = client.get(self.url.clone());
+        todo!("Get webpage and find pics");
+        if let Some(headers) = headers {
+            for (k, v) in headers.iter() {
+                request = request.header(k, v);
+            }
         }
+        todo!("Get webpage and find pics");
+        todo!("iter over pics and add them to self.items");
+        self.changed = true;
     }
 
     fn scheme(&self) -> &str { self.url.scheme() }
@@ -362,6 +437,54 @@ impl Folder {
     pub fn _origin(&self) -> Origin { self.url.origin() }
 
     pub fn path(&self) -> &str { self.url.path() }
+
+    pub fn next_page(&mut self) {
+        if (self.index + 1) as usize * (self.batch as usize) <
+            self.items.values().len()
+        {
+            self.index += 1;
+        }
+    }
+
+    pub fn prev_page(&mut self) {
+        if self.index > 0 {
+            self.index -= 1;
+        }
+    }
+
+    pub fn more(&mut self) {
+        self.batch = (self.items.len() / self.index.max(1) as usize)
+            .min(self.batch as usize + 1) as u8;
+    }
+
+    pub fn less(&mut self) { self.batch = self.batch.saturating_sub(2) + 1; }
+
+    pub fn toggle_direction(&mut self) { self.direction ^= true; }
+}
+
+impl From<PathBuf> for Source {
+    fn from(x: PathBuf) -> Self { Self::Path(x) }
+}
+impl From<Url> for Source {
+    fn from(x: Url) -> Self { Self::Url(x) }
+}
+impl Debug for Settings {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        f.debug_struct("Settings")
+            .field("fullscreen", &self.fullscreen)
+            .field("vsync", &self.vsync)
+            .field("capture", &self.capture)
+            .field("esc_exit", &self.esc_exit)
+            .field("transparent", &self.transparent)
+            .field("ups", &self.ups)
+            .field("fps", &self.fps)
+            .field("samples", &self.samples)
+            .field("opengl", &self.opengl)
+            .finish()
+    }
 }
 impl Display for Folder {
     fn fmt(
@@ -392,72 +515,164 @@ impl Display for Folder {
         )
     }
 }
-impl Draw for Folder {
-    fn draw(
+impl<'a> Prepare<'a> for App {
+    fn prepare(
         &mut self,
-        ctx: &mut G2dTextureContext,
-        _c: Context,
-        _g: &mut GfxGraphics<Resources, CommandBuffer>,
+        ctx: Self::Input,
     ) {
+        self.panes.entry(0).or_insert(vec![Folder::default()]);
+        for item in self.panes.values_mut().into_iter().flatten() {
+            item.prepare(ctx);
+        }
+    }
+}
+impl<'a> Prepare<'a> for Folder {
+    fn prepare(
+        &mut self,
+        ctx: Self::Input,
+    ) {
+        // TODO: check for changes
         if self.changed {
-            self.prepare(ctx);
-            self.changed = false;
+            self.read();
+            self.items.values_mut().for_each(|pic| pic.prepare(ctx));
+            self.size = self
+                .items
+                .values()
+                .fold(0, |acc, Picture { size, .. }| acc + size);
+            self.maxdim = self
+                .items
+                .values()
+                .fold((0, 0), |acc, pic| (acc.0.max(pic.w), acc.1.max(pic.h)));
         }
+        self.changed = false;
     }
 }
-impl Prepare for Folder {
-    fn load_textures(
+impl<'a> Prepare<'a> for Picture {
+    fn prepare(
         &mut self,
-        ctx: &mut G2dTextureContext,
+        ctx: Self::Input,
     ) {
-        for (_, (pb, tex)) in self.items.iter_mut() {
-            *tex = Some(
-                Texture::from_path(
-                    ctx,
-                    pb,
-                    Flip::None,
-                    &TextureSettings::new().filter(texture::Filter::Nearest),
-                )
-                .ok()
-                .unwrap(),
-            );
-            // use gfx_graphics::ImageSize;
-            // if let Some(t) = tex {
-            //     let (w, h) = t.get_size();
-            // }
+        self.tex = match Texture::from_path(
+            ctx,
+            &self.path,
+            Flip::None,
+            &TextureSettings::new().filter(texture::Filter::Nearest),
+        ) {
+            Ok(t) => Some(t),
+            Err(_) => None,
+        };
+        if let Some(t) = &self.tex {
+            (self.w, self.h) = t.get_size();
         }
+        self.size = self.path.metadata().unwrap().len();
     }
 }
-impl Draw for App {
+impl<'a> Draw<'a> for Picture {
+    type Params = (f64, &'a (f64, f64));
+
     fn draw(
-        &mut self,
-        ctx: &mut G2dTextureContext,
+        &self,
         c: Context,
         g: &mut GfxGraphics<Resources, CommandBuffer>,
+        params: Self::Params,
     ) {
-        self.panemap.get_mut(&self.pane).unwrap()[0].draw(ctx, c, g);
+        let transform = c
+            .trans(params.1 .0, params.1 .1)
+            .transform
+            .append_transform(graphics::math::scale(params.0, params.0));
+        // dbg!(c.transform);
+        if let Some(texture) = &self.tex {
+            image(texture, transform, g);
+        }
     }
 }
+impl Draw<'_> for Folder {
+    type Params = (f64, f64);
 
-enum PathOrUrl {
-    Path(PathBuf),
-    Url(Url),
+    fn draw(
+        &self,
+        c: Context,
+        g: &mut GfxGraphics<Resources, CommandBuffer>,
+        dim: Self::Params,
+    ) {
+        let _count = self.items.len();
+        let ar = dim.0 / dim.1;
+        let maxes = self
+            .items
+            .values()
+            .into_iter()
+            .chunks(self.batch as usize)
+            .into_iter()
+            .nth(self.index as usize)
+            .unwrap()
+            .fold((0, 0, 0., 1., 1), |a, p| {
+                if (a.2 + 1.) / a.3 > ar {
+                    (a.0 + p.w, a.1, a.2 + 1., a.3, a.4 + 1)
+                } else {
+                    (a.0 + p.w, a.1.max(p.h), a.2, a.3 + 1., a.4 + 1)
+                }
+            });
+        // dbg!(&maxes);
+        let scale = (dim.0 / maxes.0 as f64).min(dim.1 / maxes.1 as f64);
+        if self.direction {
+            self.items
+                .values()
+                .into_iter()
+                .chunks(self.batch as usize)
+                .into_iter()
+                .nth(self.index as usize)
+                .unwrap()
+                .enumerate()
+                .fold((dim.0, 0.), |off, (_n, p)| {
+                    dbg!(&off);
+                    let tmp;
+                    if off.0 / dim.0 < dim.0 / dim.1 {
+                        tmp = (off.0 - ((p.w as f64) * scale), 0.);
+                    } else {
+                        tmp = (dim.0, p.h as f64);
+                    }
+                    p.draw(c, g, (scale, &tmp));
+                    tmp
+                });
+        } else {
+            self.items
+                .values()
+                .into_iter()
+                .chunks(self.batch as usize)
+                .into_iter()
+                .nth(self.index as usize)
+                .unwrap()
+                .enumerate()
+                .fold((0., 0.), |mut off, (_n, p)| {
+                    let tmp;
+                    if off.0 / dim.0 < dim.0 / dim.1 {
+                        tmp = (off.0 + p.w as f64 * scale, 0.);
+                    } else {
+                        // (0., maxes.1 as f64 * scale)
+                        tmp = (0., p.h as f64);
+                    }
+                    p.draw(c, g, (scale, &mut off));
+                    tmp
+                });
+        }
+        dbg!("fix me!");
+        dbg!(&dim);
+    }
 }
-impl From<PathBuf> for PathOrUrl {
-    fn from(x: PathBuf) -> Self { Self::Path(x) }
+impl Draw<'_> for App {
+    fn draw(
+        &self,
+        c: Context,
+        g: &mut GfxGraphics<Resources, CommandBuffer>,
+        _: Self::Params,
+    ) {
+        self.panes
+            .get(&self.current)
+            .unwrap()
+            .iter()
+            .for_each(|a| a.draw(c, g, (self.width, self.height)));
+    }
 }
-impl From<Url> for PathOrUrl {
-    fn from(x: Url) -> Self { Self::Url(x) }
-}
-
-// use gfx_device_gl::{CommandBuffer, Resources};
-// use gfx_graphics::GfxGraphics;
-// use graphics::{clear, Context, Transformed};
-// use std::cmp::max;
-// use piston_window::{
-//     image,
-//     G2dTextureContext,
-// };
 
 // fn _draw(
 //     el: &mut Element,
@@ -469,18 +684,6 @@ impl From<Url> for PathOrUrl {
 //     width: &f64,
 //     _height: &f64,
 // ) {
-//     el.t(ctx);
-//     match el {
-//         Element::File(_, Some(Picture { w, h, tex, .. })) => {
-//             const ZOOM: f64 = 0.245;
-//             let transform = c
-//                 .trans(*offsetx as f64, offsety.0 as f64)
-//                 .transform
-//                 .append_transform(graphics::math::scale(ZOOM, ZOOM));
-//             // dbg!(c.transform);
-//             if let Some(texture) = tex {
-//                 image(texture, transform, g);
-//             }
 //             let new_offsetx = (ZOOM * *w as f64) as u32;
 //             if ((*offsetx + new_offsetx) as f64) < *width - new_offsetx as
 // f64 {                 *offsetx += new_offsetx;
@@ -494,8 +697,3 @@ impl From<Url> for PathOrUrl {
 //                 offsety.1 = 0;
 //                 *offsetx = 0;
 //             }
-//         }
-//         _ => {}
-//     }
-//     // println!("{}", el);
-// }
