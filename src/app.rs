@@ -28,7 +28,7 @@ use std::{
     cmp::max,
     collections::{BTreeMap, HashMap},
     fmt::{Debug, Display},
-    fs::{self, File},
+    fs::File,
     io::Write,
     path::PathBuf,
 };
@@ -238,7 +238,7 @@ impl App {
             let tmp = Url::parse(url).ok().unwrap();
             let name =
                 tmp.path_segments().map(|c| c.collect::<Vec<_>>()).unwrap();
-            fs::create_dir_all(PATH).ok().unwrap();
+            std::fs::create_dir_all(PATH).ok().unwrap();
             if let Ok(mut dest) =
                 File::create(format!("{}{}", PATH, name[name.len() - 1]))
             {
@@ -251,6 +251,15 @@ impl App {
         &mut self,
         _folder: Folder,
     ) {
+    }
+
+    pub fn add_folder(
+        &mut self,
+        path: String,
+    ) {
+        self.panes
+            .entry(self.current)
+            .or_insert_with(|| vec![Folder::new(&path)]);
     }
 
     pub fn next_page(&mut self) {
@@ -308,12 +317,23 @@ impl App {
 }
 impl Folder {
     pub fn new(path: &str) -> Self {
-        match Url::parse(path) {
-            Ok(url) => Self {
-                url,
-                ..Self::default()
-            },
-            Err(_) => Self::default(),
+        let p = PathBuf::from(&path);
+        let url = if p
+            .canonicalize()
+            .unwrap_or_default()
+            .to_str()
+            .expect("Failed to convert to &str.")
+            .starts_with('/')
+        {
+            Url::from_file_path(p.canonicalize().ok().unwrap().as_path())
+                .expect("couldn't parse folder path")
+        } else {
+            dbg!(&p.as_path());
+            Url::parse(path).expect("couldn't parse url path")
+        };
+        Self {
+            url,
+            ..Self::default()
         }
     }
 
@@ -469,7 +489,7 @@ impl Folder {
         w: f64,
         h: f64,
     ) {
-        self.stats = (1..=self.items.len() / self.batch as usize)
+        self.stats = (1..=self.batch as usize)
             .map(|n| {
                 (
                     self.items.len() / n,
@@ -555,7 +575,6 @@ impl<'a> Prepare<'a> for App {
         &mut self,
         ctx: Self::Input,
     ) {
-        self.panes.entry(0).or_insert(vec![Folder::default()]);
         for item in self.panes.values_mut().into_iter().flatten() {
             // item.download(&self.client, None);
             item.prepare((ctx, self.width, self.height));
@@ -636,22 +655,51 @@ impl Draw<'_> for Folder {
         dim: Self::Params,
     ) {
         let z = self.stats;
-        let scale = dim.0 / z.1 .0 as f64;
         self.items
             .values()
             .into_iter()
             .chunks(self.batch as usize)
             .into_iter()
             .nth(self.index as usize)
-            .unwrap()
+            .expect("Picking a chunk.")
             .enumerate()
-            .fold((0., 0., 0.), |(x, y, h), (n, p)| {
-                let gap = (dim.0 - ((z.1 .0 as f64) * scale)) / 2.;
-                p.draw(c, g, (scale, &((x + gap) * scale, y as f64 * scale)));
-                match n / z.0 {
-                    0 => (x + p.w as f64, y + h, 0.),
-                    _ => (0., y, (y as f64).max(p.h as f64)),
-                }
+            .fold((0., 0., 0., 0.), |(x, y, w, h), (n, p)| {
+                let scale = match (
+                    (z.1 .0 as f64).min(dim.0) / (z.1 .0 as f64).max(dim.0),
+                    (z.1 .1 as f64).min(dim.1) / (z.1 .1 as f64).max(dim.1),
+                ) {
+                    (s, t) if s < t => s,
+                    (s, t) if s > t => t,
+                    (a, _) => a,
+                };
+                let _gap = (dim.0 * (z.1 .0 as f64 / dim.0).ceil() -
+                    (z.1 .0 as f64)) *
+                    scale /
+                    2.;
+                p.draw(c, g, (scale, &((x * scale), y as f64 * scale)));
+                // dbg!(&(n, z.0, z.1, y, h, &scale));
+                (
+                    if (x + p.w as f64) < z.1 .0 as f64 {
+                        x + p.w as f64
+                    } else {
+                        0.
+                    },
+                    if (x + p.w as f64) < z.1 .0 as f64 {
+                        y
+                    } else {
+                        y + h
+                    },
+                    if (x + p.w as f64) > z.1 .0 as f64 {
+                        w + p.w as f64
+                    } else {
+                        0.
+                    },
+                    if z.0 > n {
+                        (h as f64).max(p.h as f64)
+                    } else {
+                        0.
+                    },
+                )
             });
     }
 }

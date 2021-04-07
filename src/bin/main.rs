@@ -26,14 +26,15 @@ async fn main() { run().await }
 
 async fn run() {
     let mut app = App::default();
-    app.test().await;
+    app.add_folder(std::env::args().nth(1).unwrap_or_else(|| ".".to_string()));
+    // app.test().await;
     let mut window: PistonWindow<Sdl2Window> =
         app.settings.window.build().unwrap();
     window.set_capture_cursor(app.settings.capture);
     window.set_max_fps(app.settings.fps);
     window.set_ups(app.settings.ups);
     let mut cursor = [0.; 2];
-
+    //main loop
     while let Some(e) = window.next() {
         let mut ctx = window.create_texture_context();
         app.prepare(&mut ctx);
