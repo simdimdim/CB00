@@ -20,8 +20,11 @@ use piston_window::{
 use sdl2::video::FullscreenType;
 use sdl2_window::Sdl2Window;
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
+// #[tokio::main(flavor = "current_thread")]
+#[tokio::main]
+async fn main() { run().await }
+
+async fn run() {
     let mut app = App::default();
     app.test().await;
     let mut window: PistonWindow<Sdl2Window> =

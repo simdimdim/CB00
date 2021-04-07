@@ -9,6 +9,7 @@ use itertools::Itertools;
 use levenshtein::levenshtein as lev;
 use piston_window::{
     texture,
+    G2dTextureContext,
     OpenGL,
     PistonWindow,
     Size,
@@ -102,6 +103,7 @@ impl Default for Folder {
             maxdim:    (0, 0),
             batch:     2,
             index:     0,
+            stats:     (1, (1, 1), 0.),
         }
     }
 }
@@ -118,10 +120,6 @@ impl Default for Picture {
     }
 }
 
-enum Source {
-    Path(PathBuf),
-    Url(Url),
-}
 #[derive(Clone)]
 pub struct Settings {
     pub fullscreen:  bool,
@@ -156,7 +154,8 @@ pub struct Folder {
     size:      u64,
     maxdim:    (u32, u32),
     batch:     u8,
-    index:     u32,
+    index:     usize,
+    stats:     (usize, (u32, u32), f64),
 }
 #[derive(Clone, Debug)]
 pub struct Picture {
@@ -165,6 +164,11 @@ pub struct Picture {
     pub h:    u32,
     pub size: u64,
     pub tex:  Option<Texture<Resources>>,
+}
+#[derive(Debug)]
+enum Source {
+    Path(PathBuf),
+    Url(Url),
 }
 
 impl App {
@@ -361,12 +365,10 @@ impl Folder {
                 // for entry in dir.ok().unwrap().filter_map(|a| a.ok()) {
                 //     if entry.path().is_file() &&
                 //         vec!["jpg"].contains(
-                //
                 // &entry.path().extension().unwrap().to_str().unwrap(),
                 //         )
                 //     {
                 //         self.items.insert(
-                //
                 // Url::from_directory_path(entry.path()).ok().unwrap(),
                 //             (entry.path(), None),
                 //         );
@@ -406,7 +408,7 @@ impl Folder {
     #[allow(dead_code, unused_variables, unreachable_code)]
     async fn download(
         &mut self,
-        client: Client,
+        client: &Client,
         headers: Option<HeaderMap>,
     ) {
         let request = client
@@ -446,20 +448,53 @@ impl Folder {
         }
     }
 
-    pub fn prev_page(&mut self) {
-        if self.index > 0 {
-            self.index -= 1;
-        }
-    }
+    pub fn prev_page(&mut self) { self.index = self.index.saturating_sub(1); }
 
     pub fn more(&mut self) {
         self.batch = (self.items.len() / self.index.max(1) as usize)
             .min(self.batch as usize + 1) as u8;
+        self.changed = true;
     }
 
-    pub fn less(&mut self) { self.batch = self.batch.saturating_sub(2) + 1; }
+    pub fn less(&mut self) {
+        self.batch = self.batch.saturating_sub(2) + 1;
+        self.changed = true;
+    }
 
     pub fn toggle_direction(&mut self) { self.direction ^= true; }
+
+    // TODO: Severe optimisation required.
+    pub fn folder_stats(
+        &mut self,
+        w: f64,
+        h: f64,
+    ) {
+        self.stats = (1..=self.items.len() / self.batch as usize)
+            .map(|n| {
+                (
+                    self.items.len() / n,
+                    self.items
+                        .values()
+                        .chunks(self.batch as usize)
+                        .into_iter()
+                        .nth(self.index)
+                        .unwrap()
+                        .chunks(n)
+                        .into_iter()
+                        .map(|c| c.fold((0, 0), |a, b| (a.0 + b.w, a.1.max(b.h))))
+                        .fold((0, 0), |a, b| (a.0.max(b.0), a.1 + b.1)),
+                )
+            })
+            .map(|(a, b)| {
+                let x = w / b.0 as f64;
+                let y = h / b.1 as f64;
+                (a, b, (x - y).abs())
+            })
+            .min_by(|a, b| {
+                a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Less)
+            })
+            .unwrap();
+    }
 }
 
 impl From<PathBuf> for Source {
@@ -522,19 +557,24 @@ impl<'a> Prepare<'a> for App {
     ) {
         self.panes.entry(0).or_insert(vec![Folder::default()]);
         for item in self.panes.values_mut().into_iter().flatten() {
-            item.prepare(ctx);
+            // item.download(&self.client, None);
+            item.prepare((ctx, self.width, self.height));
         }
     }
 }
 impl<'a> Prepare<'a> for Folder {
+    type Input = (&'a mut G2dTextureContext, f64, f64);
+
     fn prepare(
         &mut self,
-        ctx: Self::Input,
+        params: Self::Input,
     ) {
         // TODO: check for changes
         if self.changed {
             self.read();
-            self.items.values_mut().for_each(|pic| pic.prepare(ctx));
+            self.items
+                .values_mut()
+                .for_each(|pic| pic.prepare(params.0));
             self.size = self
                 .items
                 .values()
@@ -542,8 +582,9 @@ impl<'a> Prepare<'a> for Folder {
             self.maxdim = self
                 .items
                 .values()
-                .fold((0, 0), |acc, pic| (acc.0.max(pic.w), acc.1.max(pic.h)));
+                .fold((0, 0), |acc, pic| (acc.0 + pic.w, acc.1 + pic.h));
         }
+        self.folder_stats(params.1, params.2);
         self.changed = false;
     }
 }
@@ -580,7 +621,6 @@ impl<'a> Draw<'a> for Picture {
             .trans(params.1 .0, params.1 .1)
             .transform
             .append_transform(graphics::math::scale(params.0, params.0));
-        // dbg!(c.transform);
         if let Some(texture) = &self.tex {
             image(texture, transform, g);
         }
@@ -595,68 +635,24 @@ impl Draw<'_> for Folder {
         g: &mut GfxGraphics<Resources, CommandBuffer>,
         dim: Self::Params,
     ) {
-        let _count = self.items.len();
-        let ar = dim.0 / dim.1;
-        let maxes = self
-            .items
+        let z = self.stats;
+        let scale = dim.0 / z.1 .0 as f64;
+        self.items
             .values()
             .into_iter()
             .chunks(self.batch as usize)
             .into_iter()
             .nth(self.index as usize)
             .unwrap()
-            .fold((0, 0, 0., 1., 1), |a, p| {
-                if (a.2 + 1.) / a.3 > ar {
-                    (a.0 + p.w, a.1, a.2 + 1., a.3, a.4 + 1)
-                } else {
-                    (a.0 + p.w, a.1.max(p.h), a.2, a.3 + 1., a.4 + 1)
+            .enumerate()
+            .fold((0., 0., 0.), |(x, y, h), (n, p)| {
+                let gap = (dim.0 - ((z.1 .0 as f64) * scale)) / 2.;
+                p.draw(c, g, (scale, &((x + gap) * scale, y as f64 * scale)));
+                match n / z.0 {
+                    0 => (x + p.w as f64, y + h, 0.),
+                    _ => (0., y, (y as f64).max(p.h as f64)),
                 }
             });
-        // dbg!(&maxes);
-        let scale = (dim.0 / maxes.0 as f64).min(dim.1 / maxes.1 as f64);
-        if self.direction {
-            self.items
-                .values()
-                .into_iter()
-                .chunks(self.batch as usize)
-                .into_iter()
-                .nth(self.index as usize)
-                .unwrap()
-                .enumerate()
-                .fold((dim.0, 0.), |off, (_n, p)| {
-                    dbg!(&off);
-                    let tmp;
-                    if off.0 / dim.0 < dim.0 / dim.1 {
-                        tmp = (off.0 - ((p.w as f64) * scale), 0.);
-                    } else {
-                        tmp = (dim.0, p.h as f64);
-                    }
-                    p.draw(c, g, (scale, &tmp));
-                    tmp
-                });
-        } else {
-            self.items
-                .values()
-                .into_iter()
-                .chunks(self.batch as usize)
-                .into_iter()
-                .nth(self.index as usize)
-                .unwrap()
-                .enumerate()
-                .fold((0., 0.), |mut off, (_n, p)| {
-                    let tmp;
-                    if off.0 / dim.0 < dim.0 / dim.1 {
-                        tmp = (off.0 + p.w as f64 * scale, 0.);
-                    } else {
-                        // (0., maxes.1 as f64 * scale)
-                        tmp = (0., p.h as f64);
-                    }
-                    p.draw(c, g, (scale, &mut off));
-                    tmp
-                });
-        }
-        dbg!("fix me!");
-        dbg!(&dim);
     }
 }
 impl Draw<'_> for App {
