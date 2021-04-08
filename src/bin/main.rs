@@ -1,6 +1,6 @@
 use cb00::{
-    app::App,
-    common::{Draw, Prepare},
+    parts::{Draw, Prepare},
+    App,
 };
 use graphics::clear;
 use piston_window::{
@@ -33,7 +33,6 @@ async fn run() {
     window.set_capture_cursor(app.settings.capture);
     window.set_max_fps(app.settings.fps);
     window.set_ups(app.settings.ups);
-    let mut cursor = [0.; 2];
     //main loop
     while let Some(e) = window.next() {
         let mut ctx = window.create_texture_context();
@@ -42,15 +41,12 @@ async fn run() {
         window.draw_2d(&e, |c, g, _device| {
             clear([0.0; 4], g);
             app.draw(c, g, None);
-            // sorted.sort_by(|(a, _), (b, _)| {
-            //     a.file_name().partial_cmp(&b.file_name()).unwrap()
-            // });
         });
         if let Some(_) = e.resize_args() {
             app.resize(&window);
         }
         if let Some(pos) = e.mouse_cursor(|xy| xy) {
-            cursor = pos;
+            app.cursor(pos);
         };
         e.mouse_scroll(|d| {
             d[1];
@@ -64,22 +60,7 @@ async fn run() {
                     Key::S | Key::Down | Key::NumPadMinus => app.less(),
                     Key::R => app.toggle_direction(),
                     Key::Q => break,
-                    Key::F | Key::F12 => {
-                        match window.window.window.fullscreen_state() {
-                            FullscreenType::Off => &window
-                                .window
-                                .window
-                                .set_fullscreen(FullscreenType::Desktop),
-                            FullscreenType::True => &window
-                                .window
-                                .window
-                                .set_fullscreen(FullscreenType::Desktop),
-                            FullscreenType::Desktop => &window
-                                .window
-                                .window
-                                .set_fullscreen(FullscreenType::Off),
-                        };
-                    }
+                    Key::F | Key::F12 => fullscreen(&mut window),
                     _ => {}
                 }
             }
@@ -95,9 +76,17 @@ async fn run() {
             // app.update();
         }
     }
-    #[allow(path_statements)]
-    {
-        cursor;
-        app.ar;
-    }
+}
+fn fullscreen(window: &mut PistonWindow<Sdl2Window>) {
+    match window.window.window.fullscreen_state() {
+        FullscreenType::Off => {
+            &window.window.window.set_fullscreen(FullscreenType::Desktop)
+        }
+        FullscreenType::True => {
+            &window.window.window.set_fullscreen(FullscreenType::Desktop)
+        }
+        FullscreenType::Desktop => {
+            &window.window.window.set_fullscreen(FullscreenType::Off)
+        }
+    };
 }

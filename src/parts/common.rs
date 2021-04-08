@@ -2,6 +2,8 @@ use gfx_device_gl::{CommandBuffer, Resources};
 use gfx_graphics::GfxGraphics;
 use graphics::Context;
 use piston_window::G2dTextureContext;
+use reqwest::Url;
+use std::path::PathBuf;
 
 pub trait Draw<'a> {
     type Params = Option<()>;
@@ -29,4 +31,16 @@ pub trait Update {
         &mut self,
         _: Self::Input,
     );
+}
+
+#[derive(Debug)]
+pub enum Source {
+    Path(PathBuf),
+    Url(Url),
+}
+impl From<PathBuf> for Source {
+    fn from(x: PathBuf) -> Self { Self::Path(x) }
+}
+impl From<Url> for Source {
+    fn from(x: Url) -> Self { Self::Url(x) }
 }
