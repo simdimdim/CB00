@@ -1,57 +1,37 @@
 use super::{
     common::{Draw, Prepare},
+    storage::Settings,
     Folder,
 };
+use crate::APPNAME;
 use average::WeightedMean;
 use gfx_device_gl::{CommandBuffer, Resources};
 use gfx_graphics::GfxGraphics;
 use graphics::Context;
 use header::HeaderValue;
-use levenshtein::levenshtein as lev;
 use piston_window::{OpenGL, PistonWindow, Size, Window, WindowSettings};
 use reqwest::{header, Client, Url};
 use sdl2_window::Sdl2Window;
 use select::{document::Document, predicate::Name};
-use std::{cmp::max, collections::HashMap, fmt::Debug, fs::File, io::Write};
+use std::{collections::HashMap, fs::File, io::Write};
 
-impl Default for Settings {
-    fn default() -> Self {
-        let fullscreen = false;
-        let vsync = false;
-        let capture = false;
-        let esc_exit = true;
-        let transparent = true;
-        let ups = 30;
-        let fps = max(ups * 2, 60);
-        let samples = 16;
-        let opengl = OpenGL::V4_5;
-        let mut window = WindowSettings::new("Reader", [1., 1.])
-            .exit_on_esc(esc_exit)
-            .samples(samples)
-            .vsync(vsync)
-            .graphics_api(opengl);
-        window.set_transparent(transparent);
-        Self {
-            window,
-            fullscreen,
-            vsync,
-            capture,
-            esc_exit,
-            transparent,
-            ups,
-            fps,
-            samples,
-            opengl,
-        }
-    }
-}
 impl Default for App {
     fn default() -> Self {
+        let s = Settings::default();
+        let gl = OpenGL::V4_5;
+        let mut w = WindowSettings::new("Reader", [1., 1.])
+            .exit_on_esc(s.esc_exit)
+            .samples(s.samples)
+            .vsync(s.vsync)
+            .graphics_api(gl);
+        w.set_transparent(s.transparent);
         Self {
-            title:    "Reader".to_string(),
+            title:    APPNAME.to_string(),
+            opengl:   gl,
+            window:   w,
             current:  0,
             panes:    HashMap::new(),
-            settings: Settings::default(),
+            settings: s,
             cursor:   [0.; 2],
             width:    1.,
             height:   1.,
@@ -62,22 +42,10 @@ impl Default for App {
 }
 
 #[derive(Clone)]
-pub struct Settings {
-    pub fullscreen:  bool,
-    pub vsync:       bool,
-    pub capture:     bool,
-    pub esc_exit:    bool,
-    pub transparent: bool,
-    pub ups:         u64,
-    pub fps:         u64,
-    pub samples:     u8,
-    pub opengl:      OpenGL,
-    pub window:      WindowSettings,
-    //add new fields to Debug impl
-}
-#[derive(Clone, Debug)]
 pub struct App {
     pub title:    String,
+    pub opengl:   OpenGL,
+    pub window:   WindowSettings,
     current:      u16,
     panes:        HashMap<u16, Vec<Folder>>,
     pub settings: Settings,
@@ -89,14 +57,15 @@ pub struct App {
 }
 
 impl App {
-    pub fn new() -> Self {
-        Self {
-            title: "main".to_string(),
-            ..App::default()
-        }
-    }
+    pub fn new() -> Self { App::default() }
 
     pub async fn test(&mut self) {
+        fn lev(
+            _: &str,
+            _: &str,
+        ) -> i32 {
+            0
+        }
         let mut headers = header::HeaderMap::new();
         headers
             .insert(header::REFERER, "https://manganelo.com/".parse().unwrap());
@@ -264,25 +233,6 @@ impl Draw<'_> for App {
             .unwrap()
             .iter()
             .for_each(|a| a.draw(c, g, (self.width, self.height)));
-    }
-}
-
-impl Debug for Settings {
-    fn fmt(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
-        f.debug_struct("Settings")
-            .field("fullscreen", &self.fullscreen)
-            .field("vsync", &self.vsync)
-            .field("capture", &self.capture)
-            .field("esc_exit", &self.esc_exit)
-            .field("transparent", &self.transparent)
-            .field("ups", &self.ups)
-            .field("fps", &self.fps)
-            .field("samples", &self.samples)
-            .field("opengl", &self.opengl)
-            .finish()
     }
 }
 

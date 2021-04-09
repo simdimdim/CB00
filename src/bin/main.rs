@@ -1,5 +1,5 @@
 use cb00::{
-    parts::{Draw, Prepare},
+    parts::{Draw, Folder, Prepare},
     App,
 };
 use graphics::clear;
@@ -26,16 +26,19 @@ async fn main() { run().await }
 
 async fn run() {
     let mut app = App::default();
-    app.add_folder(std::env::args().nth(1).unwrap_or_else(|| ".".to_string()));
+    app.add_folder(std::env::args().nth(2).unwrap_or_else(|| {
+        std::env::var("EXAMPLE_DIR")
+            .ok()
+            .unwrap_or_else(|| Folder::home_dir())
+    }));
     // app.test().await;
-    let mut window: PistonWindow<Sdl2Window> =
-        app.settings.window.build().unwrap();
+    let mut window: PistonWindow<Sdl2Window> = app.window.build().unwrap();
     window.set_capture_cursor(app.settings.capture);
     window.set_max_fps(app.settings.fps);
     window.set_ups(app.settings.ups);
+    let mut ctx = window.create_texture_context();
     //main loop
     while let Some(e) = window.next() {
-        let mut ctx = window.create_texture_context();
         app.prepare(&mut ctx);
 
         window.draw_2d(&e, |c, g, _device| {

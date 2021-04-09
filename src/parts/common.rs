@@ -3,6 +3,7 @@ use gfx_graphics::GfxGraphics;
 use graphics::Context;
 use piston_window::G2dTextureContext;
 use reqwest::Url;
+use serde::{de::DeserializeOwned, Serialize};
 use std::path::PathBuf;
 
 pub trait Draw<'a> {
@@ -31,6 +32,11 @@ pub trait Update {
         &mut self,
         _: Self::Input,
     );
+}
+
+pub trait Store: DeserializeOwned + Serialize {
+    fn save(&self) {}
+    fn load(&self) {}
 }
 
 #[derive(Debug)]

@@ -2,6 +2,8 @@ pub mod app;
 pub mod common;
 pub mod folder;
 pub mod picture;
+pub mod resources;
+pub mod storage;
 pub mod ui;
 
 pub use self::{app::App, common::*, folder::Folder, picture::Picture};

@@ -6,3 +6,5 @@
 pub mod parts;
 
 pub use self::parts::App;
+
+const APPNAME: &str = "Reader";

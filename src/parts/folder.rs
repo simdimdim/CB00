@@ -3,12 +3,14 @@ use super::{
     contains,
     picture::Picture,
 };
+use crate::APPNAME;
+use directories_next::{ProjectDirs, UserDirs};
 use gfx_device_gl::{CommandBuffer, Resources};
 use gfx_graphics::GfxGraphics;
 use graphics::Context;
-use home;
 use itertools::Itertools;
 use piston_window::G2dTextureContext;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use reqwest::{header::HeaderMap, Client, Url};
 use std::{collections::BTreeMap, fmt::Display, path::PathBuf};
 use url::Origin;
@@ -16,11 +18,7 @@ use url::Origin;
 impl Default for Folder {
     fn default() -> Self {
         Self {
-            url:       Url::from_directory_path(
-                home::home_dir().unwrap().to_str().unwrap(),
-            )
-            .ok()
-            .unwrap(),
+            url:       Url::from_directory_path(Folder::home_dir()).ok().unwrap(),
             items:     BTreeMap::new(),
             changed:   true,
             direction: true,
@@ -32,6 +30,7 @@ impl Default for Folder {
         }
     }
 }
+
 #[derive(Clone, Debug)]
 pub struct Folder {
     url:       Url,
@@ -47,18 +46,11 @@ pub struct Folder {
 impl Folder {
     pub fn new(path: &str) -> Self {
         let p = PathBuf::from(&path);
-        let url = if p
-            .canonicalize()
-            .unwrap_or_default()
-            .to_str()
-            .expect("Failed to convert to &str.")
-            .starts_with('/')
-        {
-            Url::from_file_path(p.canonicalize().ok().unwrap().as_path())
-                .expect("couldn't parse folder path")
+        let url = if p.canonicalize().is_ok() {
+            Url::from_file_path(p.canonicalize().unwrap().as_path())
+                .expect("Couldn't parse folder path")
         } else {
-            dbg!(&p.as_path());
-            Url::parse(path).expect("couldn't parse url path")
+            Url::parse(path).expect("Couldn't parse url path")
         };
         Self {
             url,
@@ -189,6 +181,18 @@ impl Folder {
 
     pub fn path(&self) -> &str { self.url.path() }
 
+    #[inline]
+    pub fn home_dir() -> String {
+        let user_dirs = UserDirs::new();
+        user_dirs.unwrap().home_dir().to_str().unwrap().to_string()
+    }
+
+    #[inline]
+    pub fn cache_dir() -> String {
+        let proj_dirs = ProjectDirs::from("", "", APPNAME);
+        proj_dirs.unwrap().cache_dir().to_str().unwrap().to_string()
+    }
+
     pub fn next_page(&mut self) {
         if (self.index + 1) as usize * (self.batch as usize) <
             self.items.values().len()
@@ -218,7 +222,8 @@ impl Folder {
         w: f64,
         h: f64,
     ) {
-        self.stats = (1..=self.batch as usize)
+        self.stats = (1..=self.batch as usize / 2 + 1)
+            .into_par_iter()
             .map(|n| {
                 (
                     self.items.len() / n,
@@ -245,35 +250,7 @@ impl Folder {
             .unwrap();
     }
 }
-impl Display for Folder {
-    fn fmt(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
-        let s = (self.size as f64).log(1024.);
-        let s2 = match s as i32 {
-            0..1 => format!("{:.2}", s).to_string(),
-            1..2 => format!("{:.2}K", s).to_string(),
-            2..3 => format!("{:.2}M", s).to_string(),
-            3..4 => format!("{:.2}G", s).to_string(),
-            4..5 => format!("{:.2}T", s).to_string(),
-            _ => "".to_string(),
-        };
-        write!(
-            f,
-            "Name: {},\nSize: {}",
-            self.url
-                .to_file_path()
-                .ok()
-                .unwrap()
-                .file_name()
-                .unwrap()
-                .to_str()
-                .unwrap(),
-            s2,
-        )
-    }
-}
+
 impl Draw<'_> for Folder {
     type Params = (f64, f64);
 
@@ -356,5 +333,35 @@ impl<'a> Prepare<'a> for Folder {
         }
         self.folder_stats(params.1, params.2);
         self.changed = false;
+    }
+}
+
+impl Display for Folder {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        let s = (self.size as f64).log(1024.);
+        let s2 = match s as i32 {
+            0..1 => format!("{:.2}", s).to_string(),
+            1..2 => format!("{:.2}K", s).to_string(),
+            2..3 => format!("{:.2}M", s).to_string(),
+            3..4 => format!("{:.2}G", s).to_string(),
+            4..5 => format!("{:.2}T", s).to_string(),
+            _ => "".to_string(),
+        };
+        write!(
+            f,
+            "Name: {},\nSize: {}",
+            self.url
+                .to_file_path()
+                .ok()
+                .unwrap()
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            s2,
+        )
     }
 }
