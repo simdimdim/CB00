@@ -5,6 +5,7 @@ use super::{
 };
 use crate::APPNAME;
 use average::WeightedMean;
+use conrod_core::{Theme, Ui, UiBuilder};
 use gfx_device_gl::{CommandBuffer, Resources};
 use gfx_graphics::GfxGraphics;
 use graphics::Context;
@@ -19,16 +20,18 @@ impl Default for App {
     fn default() -> Self {
         let s = Settings::default();
         let gl = OpenGL::V4_5;
-        let mut w = WindowSettings::new("Reader", [1., 1.])
+        let mut w = WindowSettings::new(APPNAME, [1., 1.])
             .exit_on_esc(s.esc_exit)
             .samples(s.samples)
             .vsync(s.vsync)
             .graphics_api(gl);
         w.set_transparent(s.transparent);
+        let u = UiBuilder::new([1., 1.]).theme(theme()).build();
         Self {
             title:    APPNAME.to_string(),
             opengl:   gl,
             window:   w,
+            ui:       u,
             current:  0,
             panes:    HashMap::new(),
             settings: s,
@@ -41,11 +44,11 @@ impl Default for App {
     }
 }
 
-#[derive(Clone)]
 pub struct App {
     pub title:    String,
     pub opengl:   OpenGL,
     pub window:   WindowSettings,
+    pub ui:       Ui,
     current:      u16,
     panes:        HashMap<u16, Vec<Folder>>,
     pub settings: Settings,
@@ -233,6 +236,7 @@ impl Draw<'_> for App {
             .unwrap()
             .iter()
             .for_each(|a| a.draw(c, g, (self.width, self.height)));
+        if let Some(_primitives) = self.ui.draw_if_changed() {};
     }
 }
 
@@ -259,3 +263,31 @@ impl Draw<'_> for App {
 //                 offsety.1 = 0;
 //                 *offsetx = 0;
 //             }
+
+fn theme() -> Theme {
+    use conrod_core::position::{Align, Direction, Padding, Position, Relative};
+    conrod_core::Theme {
+        name:                   "Demo Theme".to_string(),
+        padding:                Padding::none(),
+        x_position:             Position::Relative(
+            Relative::Align(Align::Start),
+            None,
+        ),
+        y_position:             Position::Relative(
+            Relative::Direction(Direction::Backwards, 20.0),
+            None,
+        ),
+        background_color:       conrod_core::color::DARK_CHARCOAL,
+        shape_color:            conrod_core::color::LIGHT_CHARCOAL,
+        border_color:           conrod_core::color::BLACK,
+        border_width:           0.0,
+        label_color:            conrod_core::color::WHITE,
+        font_id:                None,
+        font_size_large:        26,
+        font_size_medium:       18,
+        font_size_small:        12,
+        widget_styling:         conrod_core::theme::StyleMap::default(),
+        mouse_drag_threshold:   0.0,
+        double_click_threshold: std::time::Duration::from_millis(300),
+    }
+}

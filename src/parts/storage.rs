@@ -38,6 +38,12 @@ pub struct Settings {
 }
 #[derive(Clone)]
 struct Manager {}
-impl Manager {}
+impl Manager {
 
-impl Store for Settings {}
+    //font dir browser
+}
+
+impl Store for Settings {
+    #[inline]
+    fn name() -> String { "Settings".to_string() }
+}

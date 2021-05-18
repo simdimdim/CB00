@@ -52,6 +52,7 @@ impl Folder {
         } else {
             Url::parse(path).expect("Couldn't parse url path")
         };
+
         Self {
             url,
             ..Self::default()

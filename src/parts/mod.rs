@@ -4,7 +4,7 @@ pub mod folder;
 pub mod picture;
 pub mod resources;
 pub mod storage;
-pub mod ui;
+mod ui;
 
 pub use self::{app::App, common::*, folder::Folder, picture::Picture};
 

@@ -1,8 +1,9 @@
-use cb00::{
+use conrod_piston::event::convert;
+use graphics::clear;
+use pagepal::{
     parts::{Draw, Folder, Prepare},
     App,
 };
-use graphics::clear;
 use piston_window::{
     AdvancedWindow,
     Button,
@@ -77,6 +78,9 @@ async fn run() {
         if let Some(_args) = e.update_args() {
             // println!("{}", args.dt);
             // app.update();
+        }
+        if let Some(event) = convert(e.clone(), app.width, app.height) {
+            app.ui.handle_event(event);
         }
     }
 }

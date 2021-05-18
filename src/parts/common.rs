@@ -35,6 +35,7 @@ pub trait Update {
 }
 
 pub trait Store: DeserializeOwned + Serialize {
+    fn name() -> String;
     fn save(&self) {}
     fn load(&self) {}
 }
