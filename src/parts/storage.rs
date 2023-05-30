@@ -39,7 +39,6 @@ pub struct Settings {
 #[derive(Clone)]
 struct Manager {}
 impl Manager {
-
     //font dir browser
 }
 

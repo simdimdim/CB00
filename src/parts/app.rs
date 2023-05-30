@@ -63,12 +63,7 @@ impl App {
     pub fn new() -> Self { App::default() }
 
     pub async fn test(&mut self) {
-        fn lev(
-            _: &str,
-            _: &str,
-        ) -> i32 {
-            0
-        }
+        fn lev(_: &str, _: &str) -> usize { 0 }
         let mut headers = header::HeaderMap::new();
         headers
             .insert(header::REFERER, "https://manganelo.com/".parse().unwrap());
@@ -86,14 +81,12 @@ impl App {
         let doc = Document::from(html.as_str());
         let mut pics = vec![];
         let links: Vec<_> = doc
-            .select(Name("img"))
+            .find(Name("img"))
             .filter_map(|n| n.attr("src"))
             // .map(|a| Url::parse(a).unwrap().path().to_string())
             .collect();
-        let mut dist: Vec<i32> = links[1..]
-            .iter()
-            .map(|a| lev(&links[0], &a) as i32)
-            .collect();
+        let mut dist: Vec<i32> =
+            links[1..].iter().map(|a| lev(links[0], a) as i32).collect();
         dist.push(0);
         dist.rotate_right(1);
         let m: WeightedMean = dist
@@ -105,7 +98,7 @@ impl App {
             .collect();
         dist.iter_mut().for_each(|a| *a -= m.mean() as i32);
         let mut zip: Vec<_> = dist.iter().zip(&links).collect();
-        zip.retain(|(&a, _)| a < 3 && a >= 0);
+        zip.retain(|(&a, _)| (0..3).contains(&a));
         const PATH: &str = "/tmp/readerapp/";
         for (n, (_, &url)) in zip.into_iter().enumerate() {
             pics.push(
@@ -113,7 +106,7 @@ impl App {
                     .get(url)
                     .header(
                         header::REFERER,
-                        "https://manganelo.com/".parse::<HeaderValue>().unwrap(),
+                        "https://manganato.com/".parse::<HeaderValue>().unwrap(),
                     )
                     .send()
                     .await
@@ -131,21 +124,14 @@ impl App {
             if let Ok(mut dest) =
                 File::create(format!("{}{}", PATH, name[name.len() - 1]))
             {
-                dest.write(&pics[n]).ok().unwrap();
+                dest.write_all(&pics[n]).ok().unwrap();
             }
         }
     }
 
-    pub async fn fetch(
-        &mut self,
-        _folder: Folder,
-    ) {
-    }
+    pub async fn fetch(&mut self, _folder: Folder) {}
 
-    pub fn add_folder(
-        &mut self,
-        path: String,
-    ) {
+    pub fn add_folder(&mut self, path: String) {
         self.panes
             .entry(self.current)
             .or_insert_with(|| vec![Folder::new(&path)]);
@@ -193,18 +179,12 @@ impl App {
             .for_each(|f| f.toggle_direction());
     }
 
-    pub fn cursor<'a>(
-        &'a mut self,
-        cursor: [f64; 2],
-    ) -> &'a [f64; 2] {
+    pub fn cursor(&mut self, cursor: [f64; 2]) -> &[f64; 2] {
         self.cursor = cursor;
         &self.cursor
     }
 
-    pub fn resize(
-        &mut self,
-        window: &PistonWindow<Sdl2Window>,
-    ) {
+    pub fn resize(&mut self, window: &PistonWindow<Sdl2Window>) {
         Size {
             width:  self.width,
             height: self.height,
@@ -214,11 +194,8 @@ impl App {
 }
 
 impl<'a> Prepare<'a> for App {
-    fn prepare(
-        &mut self,
-        ctx: Self::Input,
-    ) {
-        for item in self.panes.values_mut().into_iter().flatten() {
+    fn prepare(&mut self, ctx: Self::Input) {
+        for item in self.panes.values_mut().flatten() {
             // item.download(&self.client, None);
             item.prepare((ctx, self.width, self.height));
         }
@@ -226,9 +203,7 @@ impl<'a> Prepare<'a> for App {
 }
 impl Draw<'_> for App {
     fn draw(
-        &self,
-        c: Context,
-        g: &mut GfxGraphics<Resources, CommandBuffer>,
+        &self, c: Context, g: &mut GfxGraphics<Resources, CommandBuffer>,
         _: Self::Params,
     ) {
         self.panes

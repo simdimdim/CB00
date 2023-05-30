@@ -30,7 +30,7 @@ async fn run() {
     app.add_folder(std::env::args().nth(2).unwrap_or_else(|| {
         std::env::var("EXAMPLE_DIR")
             .ok()
-            .unwrap_or_else(|| Folder::home_dir())
+            .unwrap_or_else(Folder::home_dir)
     }));
     // app.test().await;
     let mut window: PistonWindow<Sdl2Window> = app.window.build().unwrap();
@@ -46,14 +46,14 @@ async fn run() {
             clear([0.0; 4], g);
             app.draw(c, g, None);
         });
-        if let Some(_) = e.resize_args() {
+        if e.resize_args().is_some() {
             app.resize(&window);
         }
         if let Some(pos) = e.mouse_cursor(|xy| xy) {
             app.cursor(pos);
         };
         e.mouse_scroll(|d| {
-            d[1];
+            let _ = d[1];
         });
         if let Some(button) = e.press_args() {
             if let Button::Keyboard(key) = button {

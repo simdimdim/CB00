@@ -124,10 +124,7 @@ impl Folder {
     }
 
     #[allow(unused_variables, unreachable_code)]
-    fn add_from(
-        &mut self,
-        link: impl Into<Source>,
-    ) -> Option<Picture> {
+    fn add_from(&mut self, link: impl Into<Source>) -> Option<Picture> {
         self.changed = true;
         match link.into() {
             Source::Path(pb) => self.items.insert(
@@ -148,11 +145,7 @@ impl Folder {
     }
 
     #[allow(dead_code, unused_variables, unreachable_code)]
-    async fn download(
-        &mut self,
-        client: &Client,
-        headers: Option<HeaderMap>,
-    ) {
+    async fn download(&mut self, client: &Client, headers: Option<HeaderMap>) {
         let request = client
             .get(self.url.clone())
             .send()
@@ -195,9 +188,7 @@ impl Folder {
     }
 
     pub fn next_page(&mut self) {
-        if (self.index + 1) as usize * (self.batch as usize) <
-            self.items.values().len()
-        {
+        if (self.index + 1) * (self.batch as usize) < self.items.values().len() {
             self.index += 1;
         }
     }
@@ -205,7 +196,7 @@ impl Folder {
     pub fn prev_page(&mut self) { self.index = self.index.saturating_sub(1); }
 
     pub fn more(&mut self) {
-        self.batch = (self.items.len() / self.index.max(1) as usize)
+        self.batch = (self.items.len() / self.index.max(1))
             .min(self.batch as usize + 1) as u8;
         self.changed = true;
     }
@@ -218,11 +209,7 @@ impl Folder {
     pub fn toggle_direction(&mut self) { self.direction ^= true; }
 
     // TODO: Severe optimisation required.
-    pub fn folder_stats(
-        &mut self,
-        w: f64,
-        h: f64,
-    ) {
+    pub fn folder_stats(&mut self, w: f64, h: f64) {
         self.stats = (1..=self.batch as usize / 2 + 1)
             .into_par_iter()
             .map(|n| {
@@ -256,56 +243,49 @@ impl Draw<'_> for Folder {
     type Params = (f64, f64);
 
     fn draw(
-        &self,
-        c: Context,
-        g: &mut GfxGraphics<Resources, CommandBuffer>,
+        &self, c: Context, g: &mut GfxGraphics<Resources, CommandBuffer>,
         dim: Self::Params,
     ) {
         let z = self.stats;
         self.items
             .values()
-            .into_iter()
             .chunks(self.batch as usize)
             .into_iter()
-            .nth(self.index as usize)
+            .nth(self.index)
             .expect("Picking a chunk.")
             .enumerate()
             .fold((0., 0., 0., 0.), |(x, y, w, h), (n, p)| {
                 let scale = match (
-                    (z.1 .0 as f64).min(dim.0) / (z.1 .0 as f64).max(dim.0),
-                    (z.1 .1 as f64).min(dim.1) / (z.1 .1 as f64).max(dim.1),
+                    (z.1.0 as f64).min(dim.0) / (z.1.0 as f64).max(dim.0),
+                    (z.1.1 as f64).min(dim.1) / (z.1.1 as f64).max(dim.1),
                 ) {
                     (s, t) if s < t => s,
                     (s, t) if s > t => t,
                     (a, _) => a,
                 };
-                let _gap = (dim.0 * (z.1 .0 as f64 / dim.0).ceil() -
-                    (z.1 .0 as f64)) *
+                let _gap = (dim.0 * (z.1.0 as f64 / dim.0).ceil() -
+                    (z.1.0 as f64)) *
                     scale /
                     2.;
-                p.draw(c, g, (scale, &((x * scale), y as f64 * scale)));
+                p.draw(c, g, (scale, &((x * scale), y * scale)));
                 // dbg!(&(n, z.0, z.1, y, h, &scale));
                 (
-                    if (x + p.w as f64) < z.1 .0 as f64 {
+                    if (x + p.w as f64) < z.1.0 as f64 {
                         x + p.w as f64
                     } else {
                         0.
                     },
-                    if (x + p.w as f64) < z.1 .0 as f64 {
+                    if (x + p.w as f64) < z.1.0 as f64 {
                         y
                     } else {
                         y + h
                     },
-                    if (x + p.w as f64) > z.1 .0 as f64 {
+                    if (x + p.w as f64) > z.1.0 as f64 {
                         w + p.w as f64
                     } else {
                         0.
                     },
-                    if z.0 > n {
-                        (h as f64).max(p.h as f64)
-                    } else {
-                        0.
-                    },
+                    if z.0 > n { h.max(p.h as f64) } else { 0. },
                 )
             });
     }
@@ -313,10 +293,7 @@ impl Draw<'_> for Folder {
 impl<'a> Prepare<'a> for Folder {
     type Input = (&'a mut G2dTextureContext, f64, f64);
 
-    fn prepare(
-        &mut self,
-        params: Self::Input,
-    ) {
+    fn prepare(&mut self, params: Self::Input) {
         // TODO: check for changes
         if self.changed {
             self.read();
@@ -338,17 +315,14 @@ impl<'a> Prepare<'a> for Folder {
 }
 
 impl Display for Folder {
-    fn fmt(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = (self.size as f64).log(1024.);
         let s2 = match s as i32 {
-            0..1 => format!("{:.2}", s).to_string(),
-            1..2 => format!("{:.2}K", s).to_string(),
-            2..3 => format!("{:.2}M", s).to_string(),
-            3..4 => format!("{:.2}G", s).to_string(),
-            4..5 => format!("{:.2}T", s).to_string(),
+            0..1 => format!("{:.2}", s),
+            1..2 => format!("{:.2}K", s),
+            2..3 => format!("{:.2}M", s),
+            3..4 => format!("{:.2}G", s),
+            4..5 => format!("{:.2}T", s),
             _ => "".to_string(),
         };
         write!(
